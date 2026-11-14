@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, ValidationError  # <-- Importaciones de P
 from database import db
 from models.orm_models import UsuarioModel, CatalogoAlimentoModel, RegistroConsumoModel
 from models.factories import ProteinaFactory, FrutaFactory, VerduraFactory
-from models.seguimiento import SeguimientoConsumo, RegistroConsumo
+from models.seguimiento import SeguimientoConsumo, RegistroConsumo, NotificadorPendientes, NotificadorObjetivos
 from models.nutrientes import Nutrientes
 from models.estrategias import AnalizadorNutricional, CaloriasStrategy, MacronutrientesStrategy
 from models.componente_comida import IComponenteComida
@@ -15,6 +15,8 @@ consumo_bp = Blueprint('consumo', __name__, url_prefix='/api/consumo')
 # Instanciamos nuestro Sujeto del patrón Observer
 sistema_seguimiento = SeguimientoConsumo()
 
+sistema_seguimiento.Suscribir(NotificadorPendientes())
+sistema_seguimiento.Suscribir(NotificadorObjetivos())
 
 # --- 1. DTO de Pydantic para Validar Entradas ---
 class CrearRegistroDTO(BaseModel):
@@ -130,7 +132,7 @@ def reporte_consumo(usuario_id):
     # Patrón Strategy
     if tipo_reporte == 'macros':
         estrategia = MacronutrientesStrategy()
-        tipo_resultado = "Total de Macronutrientes (g)"
+        tipo_resultado = "Desglose de Macronutrientes"
     else:
         estrategia = CaloriasStrategy()
         tipo_resultado = "Total de Calorías (kcal)"

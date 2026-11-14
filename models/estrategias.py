@@ -1,14 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Any
 from .seguimiento import RegistroConsumo
-
-"""
-@author Armando Imanol Aguilar Espiricueto
-"""
 
 class IIndicadorStrategy(ABC):
     @abstractmethod
-    def Calcular(self, registros: List[RegistroConsumo]) -> float:
+    def Calcular(self, registros: List[RegistroConsumo]) -> Any:
         pass
 
 class CaloriasStrategy(IIndicadorStrategy):
@@ -20,11 +16,12 @@ class AzucarSodioStrategy(IIndicadorStrategy):
         return sum(r.componente.GetNutrientes().azucar + r.componente.GetNutrientes().sodio for r in registros)
 
 class MacronutrientesStrategy(IIndicadorStrategy):
-    def Calcular(self, registros: List[RegistroConsumo]) -> float:
-        # Suma de macros principales
-        return sum(r.componente.GetNutrientes().proteina + 
-                   r.componente.GetNutrientes().carbohidratos + 
-                   r.componente.GetNutrientes().grasas for r in registros)
+    def Calcular(self, registros: List[RegistroConsumo]) -> dict:
+        return {
+            "proteina_g": sum(r.componente.GetNutrientes().proteina for r in registros),
+            "carbohidratos_g": sum(r.componente.GetNutrientes().carbohidratos for r in registros),
+            "grasas_g": sum(r.componente.GetNutrientes().grasas for r in registros)
+        }
 
 class AnalizadorNutricional:
     def __init__(self, estrategia: IIndicadorStrategy):
@@ -33,5 +30,5 @@ class AnalizadorNutricional:
     def SetEstrategia(self, e: IIndicadorStrategy) -> None:
         self._estrategia = e
 
-    def Analizar(self, registros: List[RegistroConsumo]) -> float:
+    def Analizar(self, registros: List[RegistroConsumo]) -> Any:
         return self._estrategia.Calcular(registros)

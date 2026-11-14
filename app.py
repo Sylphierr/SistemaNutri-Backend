@@ -1,5 +1,6 @@
 from flask import Flask, jsonify
 from database import db
+from routes.consumo import consumo_bp
 
 # Nota: Deberás importar tus modelos aquí más adelante para que 
 # SQLAlchemy sepa que existen antes de crear las tablas.
@@ -16,6 +17,8 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # 2. Vincular la base de datos a tu app Flask
 db.init_app(app)
+
+app.register_blueprint(consumo_bp)
 
 # 3. Crear las tablas automáticamente (Útil para la etapa de desarrollo)
 with app.app_context():
