@@ -22,7 +22,7 @@ class ISujeto(ABC):
         pass
     
     @abstractmethod
-    def Notificar(self) -> None:
+    def Notificar(self, evento: Any) -> None:
         pass
 
 class RegistroConsumo:
@@ -33,7 +33,6 @@ class RegistroConsumo:
 class SeguimientoConsumo(ISujeto):
     def __init__(self):
         self._observadores: List[IObservador] = []
-        self.registros: List[RegistroConsumo] = []
 
     def Suscribir(self, o: IObservador) -> None:
         if o not in self._observadores:
@@ -43,19 +42,45 @@ class SeguimientoConsumo(ISujeto):
         if o in self._observadores:
             self._observadores.remove(o)
 
-    def Notificar(self) -> None:
+    def Notificar(self, evento: Any) -> None:
         for obs in self._observadores:
-            obs.Actualizar("Nuevo registro de consumo añadido")
+            obs.Actualizar(evento)
 
-    def RegistrarConsumo(self, registro: RegistroConsumo) -> None:
-        self.registros.append(registro)
-        self.Notificar() # Dispara el patrón Observer
+    def RegistrarConsumo(self, registro: RegistroConsumo, usuario_id: int) -> None:
+        evento = {
+            "usuario_id": usuario_id,
+            "registro": registro
+        }
+        self.Notificar(evento) # Dispara el patrón Observer
 
 # --- Observadores Concretos ---
 class NotificadorPendientes(IObservador):
     def Actualizar(self, evento: Any) -> None:
-        print(f"[NotificadorPendientes]: Alerta recibida -> {evento}")
+        registro = evento.get("registro") if isinstance(evento, dict) else None
+        nombre = registro.componente.GetNombre() if registro else evento
+        print(f"[NotificadorPendientes]: Alerta recibida -> Consumo registrado: {nombre}")
 
 class NotificadorObjetivos(IObservador):
     def Actualizar(self, evento: Any) -> None:
-        print(f"[NotificadorObjetivos]: Evaluando progreso de metas tras -> {evento}")
+        from database import db
+        from .orm_models import ObjetivoNutricionalModel
+
+        usuario_id = evento.get("usuario_id")
+        registro: RegistroConsumo = evento.get("registro")
+
+        objetivo_db = db.session.query(ObjetivoNutricionalModel).filter_by(usuario_id=usuario_id).first()
+        calorias_consumidas = registro.componente.GetCalorias()
+        nombre_consumido = registro.componente.GetNombre()
+
+        if objetivo_db:
+            porcentaje = (calorias_consumidas / objetivo_db.calorias_meta) * 100 if objetivo_db.calorias_meta > 0 else 0
+            print(
+                f"[NotificadorObjetivos]: Usuario {usuario_id} consumió '{nombre_consumido}' "
+                f"({calorias_consumidas} kcal), aportando un {porcentaje:.1f}% hacia su meta de "
+                f"{objetivo_db.calorias_meta} kcal."
+            )
+        else:
+            print(
+                f"[NotificadorObjetivos]: Usuario {usuario_id} consumió '{nombre_consumido}' "
+                f"({calorias_consumidas} kcal). Sin objetivo nutricional registrado."
+            )

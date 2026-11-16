@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Optional
 from .alimento import Alimento
 from .platillo import Platillo
 from .nutrientes import Nutrientes
@@ -10,21 +11,24 @@ from .nutrientes import Nutrientes
 # --- Factories para Alimentos ---
 class AlimentoFactory(ABC):
     @abstractmethod
-    def CrearAlimento(self, nombre: str) -> Alimento:
+    def CrearAlimento(self, nombre: str, nutrientes_db: Optional[Nutrientes] = None) -> Alimento:
         pass
 
 class ProteinaFactory(AlimentoFactory):
-    def CrearAlimento(self, nombre: str) -> Alimento:
-        # Ejemplo: Valores base por defecto para una proteína
-        return Alimento(nombre, Nutrientes(150, 25, 0, 5, 0, 50)) 
+    def CrearAlimento(self, nombre: str, nutrientes_db: Optional[Nutrientes] = None) -> Alimento:
+        # Ejemplo: Valores base por defecto para una proteína si no provienen de BD
+        nutrientes = nutrientes_db if nutrientes_db is not None else Nutrientes(150, 25, 0, 5, 0, 50)
+        return Alimento(nombre, nutrientes)
 
 class FrutaFactory(AlimentoFactory):
-    def CrearAlimento(self, nombre: str) -> Alimento:
-        return Alimento(nombre, Nutrientes(80, 1, 20, 0, 15, 2))
+    def CrearAlimento(self, nombre: str, nutrientes_db: Optional[Nutrientes] = None) -> Alimento:
+        nutrientes = nutrientes_db if nutrientes_db is not None else Nutrientes(80, 1, 20, 0, 15, 2)
+        return Alimento(nombre, nutrientes)
 
 class VerduraFactory(AlimentoFactory):
-    def CrearAlimento(self, nombre: str) -> Alimento:
-        return Alimento(nombre, Nutrientes(30, 2, 5, 0, 2, 10))
+    def CrearAlimento(self, nombre: str, nutrientes_db: Optional[Nutrientes] = None) -> Alimento:
+        nutrientes = nutrientes_db if nutrientes_db is not None else Nutrientes(30, 2, 5, 0, 2, 10)
+        return Alimento(nombre, nutrientes)
 
 # --- Factories para Platillos ---
 class PlatilloFactory(ABC):

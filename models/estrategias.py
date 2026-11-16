@@ -12,8 +12,11 @@ class CaloriasStrategy(IIndicadorStrategy):
         return sum(r.componente.GetCalorias() for r in registros)
 
 class AzucarSodioStrategy(IIndicadorStrategy):
-    def Calcular(self, registros: List[RegistroConsumo]) -> float:
-        return sum(r.componente.GetNutrientes().azucar + r.componente.GetNutrientes().sodio for r in registros)
+    def Calcular(self, registros: List[RegistroConsumo]) -> dict:
+        return {
+            "azucar_g": sum(r.componente.GetNutrientes().azucar for r in registros),
+            "sodio_mg": sum(r.componente.GetNutrientes().sodio for r in registros)
+        }
 
 class MacronutrientesStrategy(IIndicadorStrategy):
     def Calcular(self, registros: List[RegistroConsumo]) -> dict:

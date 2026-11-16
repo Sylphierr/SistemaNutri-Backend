@@ -10,11 +10,11 @@ class ObjetivoNutricional:
         self.caloriasMeta = caloriasMeta
         self.proteinaMeta = proteinaMeta
 
-    def EstaCumplido(self, valorCalorias: float) -> bool:
-        return valorCalorias <= self.caloriasMeta
+    def EstaCumplido(self, valorCalorias: float, valorProteina: float = 0.0) -> bool:
+        return valorCalorias <= self.caloriasMeta and valorProteina >= self.proteinaMeta
 
 class Recomendacion:
-    def __init__(self, mensaje: str):
+    def __init__(self, mensaje: str = ""):
         self._mensaje = mensaje
 
     def AvisoLegal(self) -> str:
@@ -23,8 +23,18 @@ class Recomendacion:
 
 class ComparadorHabitos:
     def Comparar(self, registros: List[Any], objetivo: ObjetivoNutricional) -> str:
-        # Lógica de comparación
-        return "Resultado: Consumo dentro de los parámetros del objetivo."
+        total_calorias = sum(r.componente.GetCalorias() for r in registros)
+        total_proteina = sum(r.componente.GetNutrientes().proteina for r in registros)
+
+        if objetivo.EstaCumplido(total_calorias, total_proteina):
+            return (
+                f"Objetivo cumplido: {total_calorias}/{objetivo.caloriasMeta} kcal y "
+                f"{total_proteina}/{objetivo.proteinaMeta}g de proteína."
+            )
+        return (
+            f"En progreso o fuera de rango: llevas {total_calorias}/{objetivo.caloriasMeta} kcal y "
+            f"{total_proteina}/{objetivo.proteinaMeta}g de proteína."
+        )
 
     def ObtenerTendencias(self) -> str:
         return "Tendencia: Alto consumo de proteínas en el desayuno."

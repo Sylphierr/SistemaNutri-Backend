@@ -1,6 +1,6 @@
 from sqlalchemy import String, Float, Integer, ForeignKey, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from database import db
 
 # 1. Tabla de Usuarios
@@ -49,7 +49,7 @@ class RegistroConsumoModel(db.Model):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
-    fecha: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    fecha: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Guardamos una "fotografía" de lo que se comió (puede ser un Alimento simple o un Platillo compuesto)
     nombre_consumido: Mapped[str] = mapped_column(String(150), nullable=False)
