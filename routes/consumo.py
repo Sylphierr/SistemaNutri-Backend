@@ -38,6 +38,9 @@ class CrearRegistroDTO(BaseModel):
     tipo_platillo: str = Field(default="comida", description="Tipo de platillo para la fábrica: 'desayuno' o 'comida'")
     es_vegano: bool = Field(default=False, description="Indica si el platillo o alimento se decora como vegano")
 
+class CrearAlimentoDTO(BaseModel):
+    nombre: str = Field(..., min_length=2, description="Nombre del nuevo alimento")
+    grupo: str = Field(..., description="Grupo: 'Proteina', 'Fruta' o 'Verdura'")
 
 # --- 2. Adaptador ---
 class AdaptadorRegistroDB(IComponenteComida):
@@ -208,3 +211,50 @@ def reporte_consumo(usuario_id):
         "aviso_legal": aviso_legal,
         "historial": [r.nombre_consumido for r in registros_db]
     }), 200
+
+@consumo_bp.route('/alimento/personalizado', methods=['POST'])
+def crear_alimento_personalizado():
+    try:
+        json_data = request.get_json(silent=True) or {}
+        datos = CrearAlimentoDTO.model_validate(json_data)
+    except ValidationError as e:
+        return jsonify({"error": "Datos inválidos", "detalles": e.errors()}), 400
+
+    # 1. Normalizamos el grupo para que coincida con las fábricas
+    grupo_normalizado = datos.grupo.capitalize()
+
+    # 2. Verificamos que el alimento no exista ya en la base de datos
+    existe = db.session.query(CatalogoAlimentoModel).filter_by(nombre=datos.nombre).first()
+    if existe:
+        return jsonify({"error": f"El alimento '{datos.nombre}' ya existe."}), 400
+
+    # 3. Disparamos el Patrón Factory según el grupo
+    if grupo_normalizado == "Proteina":
+        fabrica = ProteinaFactory()
+    elif grupo_normalizado == "Fruta":
+        fabrica = FrutaFactory()
+    elif grupo_normalizado == "Verdura":
+        fabrica = VerduraFactory()
+    else:
+        return jsonify({"error": "Grupo no válido. Usa Proteina, Fruta o Verdura"}), 400
+
+    # 4. Creamos el alimento en memoria (la fábrica le asigna los nutrientes por defecto)
+    alimento_dominio = fabrica.CrearAlimento(datos.nombre)
+    nutrientes = alimento_dominio.GetNutrientes()
+
+    # 5. Lo persistimos en el catálogo para futuras consultas
+    nuevo_alimento_db = CatalogoAlimentoModel(
+        nombre=alimento_dominio.GetNombre(),
+        tipo_factory=grupo_normalizado,
+        calorias=nutrientes.calorias,
+        proteina=nutrientes.proteina,
+        carbohidratos=nutrientes.carbohidratos,
+        grasas=nutrientes.grasas,
+        azucar=nutrientes.azucar,
+        sodio=nutrientes.sodio
+    )
+
+    db.session.add(nuevo_alimento_db)
+    db.session.commit()
+
+    return jsonify({"mensaje": f"Alimento '{datos.nombre}' creado y guardado en el catálogo."}), 201
