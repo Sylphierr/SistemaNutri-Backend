@@ -258,3 +258,22 @@ def crear_alimento_personalizado():
     db.session.commit()
 
     return jsonify({"mensaje": f"Alimento '{datos.nombre}' creado y guardado en el catálogo."}), 201
+
+
+@consumo_bp.route('/alimentos', methods=['GET'])
+def obtener_catalogo_alimentos():
+    alimentos_db = db.session.query(CatalogoAlimentoModel).order_by(CatalogoAlimentoModel.nombre).all()
+    return jsonify([
+        {
+            "id": a.id,
+            "nombre": a.nombre,
+            "tipo_factory": a.tipo_factory,
+            "calorias": a.calorias,
+            "proteina": a.proteina,
+            "carbohidratos": a.carbohidratos,
+            "grasas": a.grasas,
+            "azucar": a.azucar,
+            "sodio": a.sodio,
+        }
+        for a in alimentos_db
+    ]), 200
