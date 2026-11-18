@@ -22,16 +22,21 @@ class Platillo(IComponenteComida):
         return self._nombre
 
     def GetCalorias(self) -> float:
-        return sum(c.GetCalorias() for c in self._componentes)
+        return round(sum(c.GetCalorias() for c in self._componentes), 1)
 
     def GetNutrientes(self) -> Nutrientes:
         total = Nutrientes(0, 0, 0, 0, 0, 0)
         for comp in self._componentes:
             n = comp.GetNutrientes()
-            total.calorias += n.calorias
-            total.proteina += n.proteina
-            total.carbohidratos += n.carbohidratos
-            total.grasas += n.grasas
-            total.azucar += n.azucar
-            total.sodio += n.sodio
+            total.calorias = round(total.calorias + n.calorias, 1)
+            total.proteina = round(total.proteina + n.proteina, 1)
+            total.carbohidratos = round(total.carbohidratos + n.carbohidratos, 1)
+            total.grasas = round(total.grasas + n.grasas, 1)
+            total.azucar = round(total.azucar + n.azucar, 1)
+            total.sodio = round(total.sodio + n.sodio, 1)
         return total
+
+    def GetDescripcionIngredientes(self) -> str:
+        if not self._componentes:
+            return "Ingrediente único"
+        return ", ".join(c.GetNombre() for c in self._componentes)

@@ -13,3 +13,7 @@ class IComponenteComida(ABC):
     @abstractmethod
     def GetNutrientes(self) -> Nutrientes:
         pass
+
+    @abstractmethod
+    def GetDescripcionIngredientes(self) -> str:
+        pass

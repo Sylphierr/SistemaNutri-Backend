@@ -1,26 +1,32 @@
 # routes/consumo.py
+from typing import Union
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from pydantic import BaseModel, Field, ValidationError
 from database import db
-from models.orm_models import UsuarioModel, CatalogoAlimentoModel, RegistroConsumoModel
+from models.orm_models import (
+    UsuarioModel,
+    ObjetivoNutricionalModel,
+    CatalogoAlimentoModel,
+    RegistroConsumoModel,
+)
 from models.factories import (
-    ProteinaFactory,
-    FrutaFactory,
     VerduraFactory,
-    DesayunoFactory,
     ComidaFactory,
+    FABRICAS_ALIMENTO,
+    FABRICAS_PLATILLO,
 )
 from models.seguimiento import SeguimientoConsumo, RegistroConsumo, NotificadorPendientes, NotificadorObjetivos
 from models.nutrientes import Nutrientes
 from models.estrategias import (
     AnalizadorNutricional,
     CaloriasStrategy,
-    MacronutrientesStrategy,
-    AzucarSodioStrategy,
+    ESTRATEGIAS_REPORTE,
 )
 from models.componente_comida import IComponenteComida
-from models.platillo_decorator import VeganoDecorator
+from models.platillo_decorator import VeganoDecorator, PorcionDecorator
 from models.dominio import ObjetivoNutricional, ComparadorHabitos, Recomendacion
+from models.adaptadores import AdaptadorRegistroDB
 
 # Instanciamos el Blueprint (equivalente a APIRouter)
 consumo_bp = Blueprint('consumo', __name__, url_prefix='/api/consumo')
@@ -31,37 +37,30 @@ sistema_seguimiento = SeguimientoConsumo()
 sistema_seguimiento.Suscribir(NotificadorPendientes())
 sistema_seguimiento.Suscribir(NotificadorObjetivos())
 
-# --- 1. DTO de Pydantic para Validar Entradas ---
+# --- 1. DTOs de Pydantic para Validar Entradas ---
+class IngredientePorcionDTO(BaseModel):
+    nombre: str = Field(..., min_length=2, description="Nombre del alimento en el catálogo")
+    gramos: float = Field(default=100.0, gt=0, description="Cantidad en gramos del alimento")
+
 class CrearRegistroDTO(BaseModel):
-    usuario_id: int = Field(..., gt=0, description="El ID del usuario debe ser un entero positivo")
-    alimentos: list[str] = Field(..., min_length=1, description="Lista de nombres de alimentos consumidos")
-    tipo_platillo: str = Field(default="comida", description="Tipo de platillo para la fábrica: 'desayuno' o 'comida'")
+    alimentos: list[Union[IngredientePorcionDTO, str]] = Field(
+        ...,
+        min_length=1,
+        description="Lista de alimentos (objetos con nombre y gramos, o nombres en string)"
+    )
+    tipo_platillo: str = Field(
+        default="comida",
+        description="Tipo de platillo para la fábrica: 'desayuno', 'comida', 'cena' o 'merienda'"
+    )
     es_vegano: bool = Field(default=False, description="Indica si el platillo o alimento se decora como vegano")
 
 class CrearAlimentoDTO(BaseModel):
     nombre: str = Field(..., min_length=2, description="Nombre del nuevo alimento")
-    grupo: str = Field(..., description="Grupo: 'Proteina', 'Fruta' o 'Verdura'")
+    grupo: str = Field(..., description="Grupo: 'Proteina', 'Fruta', 'Verdura' o 'Leguminosa'")
 
-# --- 2. Adaptador ---
-class AdaptadorRegistroDB(IComponenteComida):
-    def __init__(self, registro_db: RegistroConsumoModel):
-        self._registro = registro_db
-
-    def GetNombre(self) -> str:
-        return self._registro.nombre_consumido
-
-    def GetCalorias(self) -> float:
-        return self._registro.calorias_totales
-
-    def GetNutrientes(self) -> Nutrientes:
-        return Nutrientes(
-            calorias=self._registro.calorias_totales,
-            proteina=self._registro.proteina_total,
-            carbohidratos=self._registro.carbohidratos_total,
-            grasas=self._registro.grasas_total,
-            azucar=self._registro.azucar_total,
-            sodio=self._registro.sodio_total
-        )
+class ActualizarObjetivoDTO(BaseModel):
+    calorias_meta: float = Field(..., gt=0, description="Meta diaria de calorías (kcal)")
+    proteina_meta: float = Field(..., gt=0, description="Meta diaria de proteína (g)")
 
 
 def _crear_alimento_desde_bd(alimento_db: CatalogoAlimentoModel):
@@ -74,18 +73,13 @@ def _crear_alimento_desde_bd(alimento_db: CatalogoAlimentoModel):
         sodio=alimento_db.sodio,
     )
 
-    if alimento_db.tipo_factory == "Proteina":
-        fabrica = ProteinaFactory()
-    elif alimento_db.tipo_factory == "Fruta":
-        fabrica = FrutaFactory()
-    else:
-        fabrica = VerduraFactory()
-
-    return fabrica.CrearAlimento(alimento_db.nombre, nutrientes_bd)
+    clase_fabrica = FABRICAS_ALIMENTO.get(alimento_db.tipo_factory, VerduraFactory)
+    return clase_fabrica().CrearAlimento(alimento_db.nombre, nutrientes_bd)
 
 
-# --- 3. Rutas (Endpoints) ---
+# --- 2. Rutas (Endpoints) ---
 @consumo_bp.route('/registrar', methods=['POST'])
+@jwt_required()
 def registrar_consumo():
     # A. Validar con Pydantic
     try:
@@ -97,37 +91,44 @@ def registrar_consumo():
             "detalles": e.errors()
         }), 400
 
-    usuario_id = datos_validados.usuario_id
+    usuario_id = int(get_jwt_identity())
 
     # B. Validar existencia de usuario en BD
     usuario = db.session.get(UsuarioModel, usuario_id)
     if not usuario:
         return jsonify({"error": "Usuario no encontrado"}), 404
 
-    # C. Patrón Factory y Patrón Composite
+    # C. Patrón Factory, Patrón Decorator (PorcionDecorator) y Patrón Composite
     componentes_creados = []
-    for nombre_alimento in datos_validados.alimentos:
+    for item_alimento in datos_validados.alimentos:
+        if isinstance(item_alimento, str):
+            nombre_alimento = item_alimento
+            gramos = 100.0
+        else:
+            nombre_alimento = item_alimento.nombre
+            gramos = item_alimento.gramos
+
         alimento_db = db.session.query(CatalogoAlimentoModel).filter_by(nombre=nombre_alimento).first()
         if not alimento_db:
             return jsonify({"error": f"Alimento '{nombre_alimento}' no disponible en el catálogo"}), 404
 
         alimento_dominio = _crear_alimento_desde_bd(alimento_db)
-        componentes_creados.append(alimento_dominio)
+        alimento_porcionado = PorcionDecorator(alimento_dominio, gramos)
+        componentes_creados.append(alimento_porcionado)
 
     if len(componentes_creados) == 1:
         componente_base: IComponenteComida = componentes_creados[0]
     else:
-        if datos_validados.tipo_platillo.lower() == "desayuno":
-            fabrica_platillo = DesayunoFactory()
-        else:
-            fabrica_platillo = ComidaFactory()
-
-        platillo = fabrica_platillo.CrearPlatillo()
+        clase_fabrica_platillo = FABRICAS_PLATILLO.get(
+            datos_validados.tipo_platillo.lower(),
+            ComidaFactory
+        )
+        platillo = clase_fabrica_platillo().CrearPlatillo()
         for comp in componentes_creados:
             platillo.Agregar(comp)
         componente_base = platillo
 
-    # D. Patrón Decorator
+    # D. Patrón Decorator (Vegano)
     if datos_validados.es_vegano:
         componente_final: IComponenteComida = VeganoDecorator(componente_base)
     else:
@@ -142,6 +143,7 @@ def registrar_consumo():
     nuevo_registro_db = RegistroConsumoModel(
         usuario_id=usuario.id,
         nombre_consumido=componente_final.GetNombre(),
+        ingredientes_consumidos=componente_final.GetDescripcionIngredientes(),
         calorias_totales=componente_final.GetCalorias(),
         proteina_total=nutrientes_finales.proteina,
         carbohidratos_total=nutrientes_finales.carbohidratos,
@@ -159,45 +161,44 @@ def registrar_consumo():
     }), 201
 
 
+@consumo_bp.route('/reporte', methods=['GET'])
 @consumo_bp.route('/usuario/<int:usuario_id>/reporte', methods=['GET'])
-def reporte_consumo(usuario_id):
+@jwt_required()
+def reporte_consumo(usuario_id=None):
+    usuario_id = int(get_jwt_identity())
     usuario = db.session.get(UsuarioModel, usuario_id)
     if not usuario:
         return jsonify({"error": "Usuario no encontrado"}), 404
 
     registros_db = db.session.query(RegistroConsumoModel).filter_by(usuario_id=usuario_id).all()
-
-    registros_dominio = []
-    for reg_db in registros_db:
-        componente_adaptado = AdaptadorRegistroDB(reg_db)
-        registros_dominio.append(RegistroConsumo(componente_adaptado))
+    registros_dominio = [RegistroConsumo(AdaptadorRegistroDB(reg_db)) for reg_db in registros_db]
 
     tipo_reporte = request.args.get('tipo', 'calorias')
 
-    # Patrón Strategy
-    if tipo_reporte == 'macros':
-        estrategia = MacronutrientesStrategy()
-        tipo_resultado = "Desglose de Macronutrientes"
-    elif tipo_reporte == 'azucar_sodio':
-        estrategia = AzucarSodioStrategy()
-        tipo_resultado = "Desglose de Azúcar y Sodio"
-    else:
-        estrategia = CaloriasStrategy()
-        tipo_resultado = "Total de Calorías (kcal)"
-
-    analizador = AnalizadorNutricional(estrategia)
+    # Patrón Strategy resuelto mediante diccionario (OCP)
+    clase_estrategia, tipo_resultado = ESTRATEGIAS_REPORTE.get(
+        tipo_reporte,
+        (CaloriasStrategy, "Total de Calorías (kcal)")
+    )
+    analizador = AnalizadorNutricional(clase_estrategia())
     resultado = analizador.Analizar(registros_dominio)
 
     # Integración con entidades de Dominio
+    comparador = ComparadorHabitos()
     evaluacion_habitos = "Sin objetivo nutricional configurado para este usuario."
+    objetivo_actual = None
     if usuario.objetivo:
         objetivo_dominio = ObjetivoNutricional(
             caloriasMeta=usuario.objetivo.calorias_meta,
             proteinaMeta=usuario.objetivo.proteina_meta
         )
-        comparador = ComparadorHabitos()
         evaluacion_habitos = comparador.Comparar(registros_dominio, objetivo_dominio)
+        objetivo_actual = {
+            "calorias_meta": round(usuario.objetivo.calorias_meta, 1),
+            "proteina_meta": round(usuario.objetivo.proteina_meta, 1),
+        }
 
+    tendencias = comparador.ObtenerTendencias(registros_dominio)
     aviso_legal = Recomendacion().AvisoLegal()
 
     return jsonify({
@@ -207,12 +208,49 @@ def reporte_consumo(usuario_id):
         "resultado": {
             tipo_resultado: resultado
         },
+        "objetivo": objetivo_actual,
         "evaluacion_objetivo": evaluacion_habitos,
-        "aviso_legal": aviso_legal,
-        "historial": [r.nombre_consumido for r in registros_db]
+        "tendencias": tendencias,
+        "aviso_legal": aviso_legal
     }), 200
 
+
+@consumo_bp.route('/objetivo', methods=['PUT'])
+@consumo_bp.route('/usuario/<int:usuario_id>/objetivo', methods=['PUT'])
+@jwt_required()
+def actualizar_objetivo_usuario(usuario_id=None):
+    usuario_id = int(get_jwt_identity())
+    usuario = db.session.get(UsuarioModel, usuario_id)
+    if not usuario:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
+    try:
+        json_data = request.get_json(silent=True) or {}
+        datos = ActualizarObjetivoDTO.model_validate(json_data)
+    except ValidationError as e:
+        return jsonify({"error": "Datos de objetivo inválidos", "detalles": e.errors()}), 400
+
+    if usuario.objetivo:
+        usuario.objetivo.calorias_meta = round(datos.calorias_meta, 1)
+        usuario.objetivo.proteina_meta = round(datos.proteina_meta, 1)
+    else:
+        nuevo_obj = ObjetivoNutricionalModel(
+            usuario_id=usuario.id,
+            calorias_meta=round(datos.calorias_meta, 1),
+            proteina_meta=round(datos.proteina_meta, 1),
+        )
+        db.session.add(nuevo_obj)
+
+    db.session.commit()
+    return jsonify({
+        "mensaje": "Objetivo nutricional actualizado correctamente.",
+        "calorias_meta": round(datos.calorias_meta, 1),
+        "proteina_meta": round(datos.proteina_meta, 1),
+    }), 200
+
+
 @consumo_bp.route('/alimento/personalizado', methods=['POST'])
+@jwt_required()
 def crear_alimento_personalizado():
     try:
         json_data = request.get_json(silent=True) or {}
@@ -220,29 +258,20 @@ def crear_alimento_personalizado():
     except ValidationError as e:
         return jsonify({"error": "Datos inválidos", "detalles": e.errors()}), 400
 
-    # 1. Normalizamos el grupo para que coincida con las fábricas
     grupo_normalizado = datos.grupo.capitalize()
 
-    # 2. Verificamos que el alimento no exista ya en la base de datos
     existe = db.session.query(CatalogoAlimentoModel).filter_by(nombre=datos.nombre).first()
     if existe:
         return jsonify({"error": f"El alimento '{datos.nombre}' ya existe."}), 400
 
-    # 3. Disparamos el Patrón Factory según el grupo
-    if grupo_normalizado == "Proteina":
-        fabrica = ProteinaFactory()
-    elif grupo_normalizado == "Fruta":
-        fabrica = FrutaFactory()
-    elif grupo_normalizado == "Verdura":
-        fabrica = VerduraFactory()
-    else:
-        return jsonify({"error": "Grupo no válido. Usa Proteina, Fruta o Verdura"}), 400
+    # Patrón Factory resuelto mediante diccionario (OCP)
+    clase_fabrica = FABRICAS_ALIMENTO.get(grupo_normalizado)
+    if not clase_fabrica:
+        return jsonify({"error": "Grupo no válido. Usa Proteina, Fruta, Verdura o Leguminosa"}), 400
 
-    # 4. Creamos el alimento en memoria (la fábrica le asigna los nutrientes por defecto)
-    alimento_dominio = fabrica.CrearAlimento(datos.nombre)
+    alimento_dominio = clase_fabrica().CrearAlimento(datos.nombre)
     nutrientes = alimento_dominio.GetNutrientes()
 
-    # 5. Lo persistimos en el catálogo para futuras consultas
     nuevo_alimento_db = CatalogoAlimentoModel(
         nombre=alimento_dominio.GetNombre(),
         tipo_factory=grupo_normalizado,
@@ -261,6 +290,7 @@ def crear_alimento_personalizado():
 
 
 @consumo_bp.route('/alimentos', methods=['GET'])
+@jwt_required()
 def obtener_catalogo_alimentos():
     alimentos_db = db.session.query(CatalogoAlimentoModel).order_by(CatalogoAlimentoModel.nombre).all()
     return jsonify([

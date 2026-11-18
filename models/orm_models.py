@@ -9,6 +9,7 @@ class UsuarioModel(db.Model):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     nombre: Mapped[str] = mapped_column(String(100), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     preferencias: Mapped[str] = mapped_column(String(255), nullable=True)
 
     # Relaciones
@@ -53,6 +54,7 @@ class RegistroConsumoModel(db.Model):
     
     # Guardamos una "fotografía" de lo que se comió (puede ser un Alimento simple o un Platillo compuesto)
     nombre_consumido: Mapped[str] = mapped_column(String(150), nullable=False)
+    ingredientes_consumidos: Mapped[str] = mapped_column(String(500), nullable=True, default="")
     
     # Guardamos el total calculado por el patrón Composite en el momento del consumo.
     # Esto es crucial: si los macros de un alimento cambian en el catálogo el próximo año, 

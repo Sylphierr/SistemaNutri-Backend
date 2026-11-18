@@ -30,6 +30,11 @@ class VerduraFactory(AlimentoFactory):
         nutrientes = nutrientes_db if nutrientes_db is not None else Nutrientes(30, 2, 5, 0, 2, 10)
         return Alimento(nombre, nutrientes)
 
+class LeguminosaFactory(AlimentoFactory):
+    def CrearAlimento(self, nombre: str, nutrientes_db: Optional[Nutrientes] = None) -> Alimento:
+        nutrientes = nutrientes_db if nutrientes_db is not None else Nutrientes(120, 8, 20, 1, 1, 15)
+        return Alimento(nombre, nutrientes)
+
 # --- Factories para Platillos ---
 class PlatilloFactory(ABC):
     @abstractmethod
@@ -38,8 +43,32 @@ class PlatilloFactory(ABC):
 
 class DesayunoFactory(PlatilloFactory):
     def CrearPlatillo(self) -> Platillo:
-        return Platillo("Desayuno Estándar")
+        return Platillo("Desayuno")
 
 class ComidaFactory(PlatilloFactory):
     def CrearPlatillo(self) -> Platillo:
-        return Platillo("Comida Estándar")
+        return Platillo("Comida")
+
+class CenaFactory(PlatilloFactory):
+    def CrearPlatillo(self) -> Platillo:
+        return Platillo("Cena")
+
+class MeriendaFactory(PlatilloFactory):
+    def CrearPlatillo(self) -> Platillo:
+        return Platillo("Merienda")
+
+
+# --- Registros de Fábricas (Principio Abierto/Cerrado - OCP) ---
+FABRICAS_ALIMENTO: dict[str, type[AlimentoFactory]] = {
+    "Proteina": ProteinaFactory,
+    "Fruta": FrutaFactory,
+    "Verdura": VerduraFactory,
+    "Leguminosa": LeguminosaFactory,
+}
+
+FABRICAS_PLATILLO: dict[str, type[PlatilloFactory]] = {
+    "desayuno": DesayunoFactory,
+    "comida": ComidaFactory,
+    "cena": CenaFactory,
+    "merienda": MeriendaFactory,
+}

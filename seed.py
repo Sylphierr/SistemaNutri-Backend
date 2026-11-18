@@ -1,3 +1,4 @@
+from werkzeug.security import generate_password_hash
 from app import app
 from database import db
 from models.orm_models import UsuarioModel, ObjetivoNutricionalModel, CatalogoAlimentoModel
@@ -17,6 +18,7 @@ def poblar_base_datos():
         # 3. Crear tu Usuario de Prueba (Armando)
         usuario_prueba = UsuarioModel(
             nombre="Armando",
+            password_hash=generate_password_hash("123456"),
             preferencias="Hipertrofia muscular, comida alta en proteína"
         )
         db.session.add(usuario_prueba)

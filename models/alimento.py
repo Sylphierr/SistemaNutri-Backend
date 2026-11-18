@@ -18,3 +18,6 @@ class Alimento(IComponenteComida):
 
     def GetNutrientes(self) -> Nutrientes:
         return self._nutrientes
+
+    def GetDescripcionIngredientes(self) -> str:
+        return "Ingrediente único"
