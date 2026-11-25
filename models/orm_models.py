@@ -57,8 +57,6 @@ class RegistroConsumoModel(db.Model):
     ingredientes_consumidos: Mapped[str] = mapped_column(String(500), nullable=True, default="")
     
     # Guardamos el total calculado por el patrón Composite en el momento del consumo.
-    # Esto es crucial: si los macros de un alimento cambian en el catálogo el próximo año, 
-    # el historial de consumo de hoy no debe alterarse.
     calorias_totales: Mapped[float] = mapped_column(Float, nullable=False)
     proteina_total: Mapped[float] = mapped_column(Float, nullable=False)
     carbohidratos_total: Mapped[float] = mapped_column(Float, nullable=False)
