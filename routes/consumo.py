@@ -25,8 +25,7 @@ from models.estrategias import (
 )
 from models.componente_comida import IComponenteComida
 from models.platillo_decorator import VeganoDecorator, PorcionDecorator
-from models.dominio import ObjetivoNutricional, ComparadorHabitos, Recomendacion
-from models.adaptadores import AdaptadorRegistroDB
+from models.reporte_helper import construir_resumen_usuario
 
 # Instanciamos el Blueprint (equivalente a APIRouter)
 consumo_bp = Blueprint('consumo', __name__, url_prefix='/api/consumo')
@@ -170,49 +169,9 @@ def reporte_consumo(usuario_id=None):
     if not usuario:
         return jsonify({"error": "Usuario no encontrado"}), 404
 
-    registros_db = db.session.query(RegistroConsumoModel).filter_by(usuario_id=usuario_id).all()
-    registros_dominio = [RegistroConsumo(AdaptadorRegistroDB(reg_db)) for reg_db in registros_db]
-
     tipo_reporte = request.args.get('tipo', 'calorias')
-
-    # Patrón Strategy resuelto mediante diccionario (OCP)
-    clase_estrategia, tipo_resultado = ESTRATEGIAS_REPORTE.get(
-        tipo_reporte,
-        (CaloriasStrategy, "Total de Calorías (kcal)")
-    )
-    analizador = AnalizadorNutricional(clase_estrategia())
-    resultado = analizador.Analizar(registros_dominio)
-
-    # Integración con entidades de Dominio
-    comparador = ComparadorHabitos()
-    evaluacion_habitos = "Sin objetivo nutricional configurado para este usuario."
-    objetivo_actual = None
-    if usuario.objetivo:
-        objetivo_dominio = ObjetivoNutricional(
-            caloriasMeta=usuario.objetivo.calorias_meta,
-            proteinaMeta=usuario.objetivo.proteina_meta
-        )
-        evaluacion_habitos = comparador.Comparar(registros_dominio, objetivo_dominio)
-        objetivo_actual = {
-            "calorias_meta": round(usuario.objetivo.calorias_meta, 1),
-            "proteina_meta": round(usuario.objetivo.proteina_meta, 1),
-        }
-
-    tendencias = comparador.ObtenerTendencias(registros_dominio)
-    aviso_legal = Recomendacion().AvisoLegal()
-
-    return jsonify({
-        "usuario": usuario.nombre,
-        "registros_analizados": len(registros_dominio),
-        "estrategia_aplicada": tipo_reporte,
-        "resultado": {
-            tipo_resultado: resultado
-        },
-        "objetivo": objetivo_actual,
-        "evaluacion_objetivo": evaluacion_habitos,
-        "tendencias": tendencias,
-        "aviso_legal": aviso_legal
-    }), 200
+    resumen = construir_resumen_usuario(usuario, tipo_reporte)
+    return jsonify(resumen), 200
 
 
 @consumo_bp.route('/objetivo', methods=['PUT'])
